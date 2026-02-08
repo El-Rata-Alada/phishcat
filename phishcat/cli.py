@@ -1,28 +1,51 @@
-#hi. thanks for being here.
-#will add details hortly.
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+#!/usr/bin/env python3
 
-[project]
-name = "phishcat"
-version = "0.1.0"
-description = "Rule-based email phishing analysis tool (.eml)"
-readme = "README.md"
-requires-python = ">=3.9"
-authors = [
-  { name = "PhishCat" }
-]
+import sys
+import os
 
-dependencies = [
-  "beautifulsoup4",
-  "lxml",
-  "python-magic; platform_system != 'Windows'",
-  "python-magic-bin; platform_system == 'Windows'"
-]
+from modules.engine import run_engine
 
-[project.scripts]
-phishcat = "phishcat.cli:main"
 
-[tool.setuptools]
-packages = ["phishcat", "phishcat.modules"]
+def banner():
+    print("""
+██████╗ ██╗  ██╗██╗███████╗██╗  ██╗ ██████╗ █████╗ ████████╗
+██╔══██╗██║  ██║██║██╔════╝██║  ██║██╔════╝██╔══██╗╚══██╔══╝
+██████╔╝███████║██║███████╗███████║██║     ███████║   ██║   
+██╔═══╝ ██╔══██║██║╚════██║██╔══██║██║     ██╔══██║   ██║   
+██║     ██║  ██║██║███████║██║  ██║╚██████╗██║  ██║   ██║   
+╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝   ╚═╝   
+
+        Email Threat Analyzer
+    """)
+
+
+def usage():
+    print("Usage:")
+    print("  phishcat <file.eml>")
+
+
+def main():
+    banner()
+
+    if len(sys.argv) != 2:
+        usage()
+        sys.exit(1)
+
+    eml_path = sys.argv[1]
+
+    if not os.path.isfile(eml_path):
+        print(f"[!] File not found: {eml_path}")
+        sys.exit(1)
+
+    if not eml_path.lower().endswith(".eml"):
+        print("[!] Input must be a .eml file")
+        sys.exit(1)
+
+    print(f"[+] Analyzing: {eml_path}\n")
+
+    run_engine(eml_path)
+
+
+if __name__ == "__main__":
+    main()
+
