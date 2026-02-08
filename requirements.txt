@@ -1,0 +1,20 @@
+#just copy and run in your terminal.
+
+🍎:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install libmagic
+pip install beautifulsoup4 lxml python-magic
+pip install -e .
+phishcat sample.eml
+
+🐧:
+pip install beautifulsoup4 lxml python-magic
+pip install -e .
+phishcat sample.eml
+
+🪟:
+python -m pip install --upgrade pip
+pip install beautifulsoup4 lxml python-magic-bin
+pip install -e .
+phishcat sample.eml
+
