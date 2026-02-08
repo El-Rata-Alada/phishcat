@@ -1,2 +1,25 @@
 #hi. thanks for being here.
 #will add details hortly.
+
+[project]
+name = "phishcat"
+version = "0.1.0"
+description = "Phishing detection tool for .eml files. Header, body, and attachment analysis in one command."
+authors = [
+    { name = "Dev Taya", email = "devtaya@example.com" }
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+
+dependencies = [
+    "beautifulsoup4>=4.12.2",   # for HTML parsing
+    "lxml>=4.9.3"              # optional parser backend for BeautifulSoup
+]
+
+[project.scripts]
+phishcat = "phishcat.phishcat:main"
+
+[build-system]
+requires = ["setuptools>=65.5.0", "wheel"]
+build-backend = "setuptools.build_meta"
