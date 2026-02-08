@@ -3,7 +3,7 @@
 import sys
 import os
 
-from modules.engine import run_engine
+from phishcat.modules.engine import run_engine
 
 
 def banner():
