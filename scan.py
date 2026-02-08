@@ -1,3 +1,7 @@
+#good of you to visit.
+#a trye developer.
+#sadly this was a very early version, 
+#we won't be using it
 import sys
 from email import policy
 from email.parser import BytesParser
