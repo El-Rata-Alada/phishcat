@@ -1,25 +1,28 @@
 #hi. thanks for being here.
 #will add details hortly.
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "phishcat"
 version = "0.1.0"
-description = "Phishing detection tool for .eml files. Header, body, and attachment analysis in one command."
-authors = [
-    { name = "Dev Taya", email = "devtaya@example.com" }
-]
+description = "Rule-based email phishing analysis tool (.eml)"
 readme = "README.md"
-license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.9"
+authors = [
+  { name = "PhishCat" }
+]
 
 dependencies = [
-    "beautifulsoup4>=4.12.2",   # for HTML parsing
-    "lxml>=4.9.3"              # optional parser backend for BeautifulSoup
+  "beautifulsoup4",
+  "lxml",
+  "python-magic; platform_system != 'Windows'",
+  "python-magic-bin; platform_system == 'Windows'"
 ]
 
 [project.scripts]
 phishcat = "phishcat.cli:main"
 
-[build-system]
-requires = ["setuptools>=65.5.0", "wheel"]
-build-backend = "setuptools.build_meta"
+[tool.setuptools]
+packages = ["phishcat", "phishcat.modules"]
