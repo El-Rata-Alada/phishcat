@@ -1,8 +1,8 @@
-from modules import eml_loader
-from modules import headers
-from modules import body
-from modules import attachments
-from modules import report
+from phishcat.modules import eml_loader
+from phishcat.modules import headers
+from phishcat.modules import body
+from phishcat.modules import attachments
+from phishcat.modules import report
 
 
 def run_engine(eml_path: str) -> None:
