@@ -1,11 +1,24 @@
-
 # Dependency check
 try:
     import re
     from email.utils import parseaddr
 except ImportError:
-    print("[!] Missing stdlib dependency: email / re")
+    print("[!] Missing dependency: email / re")
     raise
+
+
+# Homoglyph / lookalike chars (Latin → Unicode lookalikes)
+HOMOGLYPHS = {
+    "a": ["а", "ɑ"],
+    "c": ["с"],
+    "e": ["е"],
+    "i": ["і", "1"],
+    "o": ["о", "0"],
+    "p": ["р"],
+    "s": ["ѕ", "$"],
+    "y": ["у"],
+    "l": ["ⅼ", "1", "!"],
+}
 
 
 def _domain(addr: str | None) -> str | None:
@@ -18,42 +31,45 @@ def _domain(addr: str | None) -> str | None:
 
 
 def _related(domain: str, base: str) -> bool:
-    # same domain or subdomain
     return domain == base or domain.endswith("." + base)
 
 
 def _extract_auth_result(headers: dict, key: str) -> str | None:
-    """Extract result (pass/fail/none) for SPF/DKIM/DMARC/ARC"""
     h = headers.get("Authentication-Results", "")
     m = re.search(rf"{key}=([a-zA-Z]+)", h)
     return m.group(1).lower() if m else None
 
 
 def _extract_auth_domain(headers: dict, key: str) -> str | None:
-    """Extract signing domain from Authentication-Results for SPF/DKIM"""
     h = headers.get("Authentication-Results", "")
-    m = re.search(rf"{key}=[^;]+?header\.i=@([^;\s]+)", h)
+    m = re.search(rf"{key}=[^;]+?@([^;\s]+)", h)
     return m.group(1).lower() if m else None
 
 
-def main(headers: dict) -> dict:
-    """
-    Max phishing-aware header analysis.
+def _homoglyph_check(value: str) -> list:
+    hits = []
 
-    Returns dict:
-    {
-        "status": "done",
-        "from_domain": str,
-        "findings": list of dict(issue, severity, detail),
-        "auth": dict(SPF, DKIM, DMARC, ARC)
-    }
-    """
+    # flag any non‑ASCII immediately
+    for ch in value:
+        if ord(ch) > 127:
+            hits.append(ch)
+
+    # explicit homoglyph matches
+    for _, lookalikes in HOMOGLYPHS.items():
+        for g in lookalikes:
+            if g in value:
+                hits.append(g)
+
+    return list(set(hits))
+
+
+def main(headers: dict) -> dict:
     findings = []
 
     try:
-        # ----- extract domains -----
         from_raw = headers.get("From")
         from_domain = _domain(from_raw)
+
         if not from_domain:
             findings.append({
                 "issue": "Missing or invalid From header",
@@ -63,29 +79,54 @@ def main(headers: dict) -> dict:
             return {"status": "weak", "findings": findings}
 
         identities = {
-            "Return-Path": _domain(headers.get("Return-Path")),
-            "Reply-To": _domain(headers.get("Reply-To")),
-            "Sender": _domain(headers.get("Sender")),
+            "From": from_raw,
+            "Return-Path": headers.get("Return-Path"),
+            "Reply-To": headers.get("Reply-To"),
+            "Sender": headers.get("Sender"),
+            "Message-ID": headers.get("Message-ID"),
         }
 
-        # ----- display-name spoofing -----
+        domains = {
+            k: _domain(v) if k != "Message-ID" else (
+                v.split("@")[-1].strip(">") if v and "@" in v else None
+            )
+            for k, v in identities.items()
+        }
+
+        # ---- homoglyph / unicode detection ----
+        for src, val in identities.items():
+            if not val:
+                continue
+            hits = _homoglyph_check(val)
+            if hits:
+                findings.append({
+                    "issue": f"Lookalike / Unicode characters in {src}",
+                    "severity": "high",
+                    "detail": {
+                        "value": val,
+                        "matched": hits
+                    }
+                })
+
+        # ---- display name spoofing ----
         display_name, _ = parseaddr(from_raw)
         if display_name and from_domain not in display_name.lower():
             findings.append({
-                "issue": "Display-name might be spoofed",
+                "issue": "Display-name spoofing suspected",
                 "severity": "medium",
                 "detail": f"Display='{display_name}', From domain={from_domain}"
             })
 
-        # ----- multiple From headers -----
-        if isinstance(headers.get("From"), list):
-            findings.append({
-                "issue": "Multiple From headers detected",
-                "severity": "high",
-                "detail": str(headers.get("From"))
-            })
+        # ---- domain alignment ----
+        for src, dom in domains.items():
+            if dom and not _related(dom, from_domain):
+                findings.append({
+                    "issue": f"{src} domain mismatch",
+                    "severity": "high",
+                    "detail": f"{dom} != {from_domain}"
+                })
 
-        # ----- authentication results -----
+        # ---- authentication results ----
         spf = _extract_auth_result(headers, "spf")
         dkim = _extract_auth_result(headers, "dkim")
         dmarc = _extract_auth_result(headers, "dmarc")
@@ -96,27 +137,18 @@ def main(headers: dict) -> dict:
 
         auth = {"SPF": spf, "DKIM": dkim, "DMARC": dmarc, "ARC": arc}
 
-        # ----- alignment checks -----
-        for src, dom in identities.items():
-            if dom and not _related(dom, from_domain):
-                findings.append({
-                    "issue": f"{src} domain mismatch",
-                    "severity": "high",
-                    "detail": f"{dom} does not match From domain {from_domain}"
-                })
-
         if spf == "pass" and spf_dom and not _related(spf_dom, from_domain):
             findings.append({
                 "issue": "SPF passed but misaligned",
                 "severity": "high",
-                "detail": f"SPF domain={spf_dom} != From domain={from_domain}"
+                "detail": f"{spf_dom} != {from_domain}"
             })
 
         if dkim == "pass" and dkim_dom and not _related(dkim_dom, from_domain):
             findings.append({
                 "issue": "DKIM passed but misaligned",
                 "severity": "high",
-                "detail": f"DKIM domain={dkim_dom} != From domain={from_domain}"
+                "detail": f"{dkim_dom} != {from_domain}"
             })
 
         if dmarc and dmarc != "pass":
@@ -126,22 +158,7 @@ def main(headers: dict) -> dict:
                 "detail": ""
             })
 
-        if arc and arc != "pass":
-            findings.append({
-                "issue": f"ARC chain issue ({arc})",
-                "severity": "low",
-                "detail": ""
-            })
-
-        # ----- Message-ID check -----
-        if "Message-ID" not in headers:
-            findings.append({
-                "issue": "Missing Message-ID header",
-                "severity": "medium",
-                "detail": ""
-            })
-
-        # ----- Human-readable summary -----
+        # ---- output ----
         if findings:
             print("[!] Header anomalies detected:")
             for f in findings:
