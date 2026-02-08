@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-phishcat = "phishcat:main"
+phishcat = "phishcat.cli:main"
 
 [build-system]
 requires = ["setuptools>=65.5.0", "wheel"]
