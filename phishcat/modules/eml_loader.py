@@ -1,28 +1,12 @@
-
-# Dependency check (stdlib only)
-try:
-    from email import policy
-    from email.parser import BytesParser
-except ImportError as e:
-    print("[!] Missing standard library dependency:", e)
-    print("    This should never happen. Check your Python installation.")
-    raise
-
-
 def main(eml_path: str) -> dict:
-    """
-    Load and parse a .eml file.
-    Returns headers, bodies, and attachments.
-    """
-
     with open(eml_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
 
     headers = dict(msg.items())
 
     bodies = {
-        "text/plain": [],
-        "text/html": []
+        "text": "",
+        "html": ""
     }
 
     attachments = []
@@ -32,9 +16,12 @@ def main(eml_path: str) -> dict:
         content_disposition = part.get_content_disposition()
 
         # Body parts
-        if content_disposition is None and content_type in bodies:
+        if content_disposition is None:
             try:
-                bodies[content_type].append(part.get_content())
+                if content_type == "text/plain":
+                    bodies["text"] += part.get_content()
+                elif content_type == "text/html":
+                    bodies["html"] += part.get_content()
             except Exception:
                 continue
 
