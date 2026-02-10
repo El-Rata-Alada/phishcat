@@ -1,30 +1,29 @@
-
 def _check_deps():
     try:
-        import email
         import zipfile
-        return email, zipfile
+        return zipfile
     except ImportError as e:
         missing = str(e).split()[-1]
         print(f"[!] Missing dependency: {missing}")
         print(f"    Install using: pip install {missing}")
-        return None, None
+        return None
 
 
-def main(msg):
-    email, zipfile = _check_deps()
-    if not email:
+def main(attachments):
+    zipfile = _check_deps()
+    if not zipfile:
         return []
 
     findings = []
 
-    for part in msg.walk():
-        filename = part.get_filename()
+    for att in attachments:
+        filename = att.get("filename")
         if not filename:
             continue
 
         filename_l = filename.lower()
-        payload = part.get_payload(decode=True) or b""
+        payload = att.get("payload") or b""
+        ctype = att.get("content_type", "")
 
         # ---------- HIGH RISK EXTENSIONS ----------
         if filename_l.endswith((
@@ -57,7 +56,7 @@ def main(msg):
                 "reason": "Archive attachment (manual inspection advised)"
             })
 
-        # ---------- OFFICE MACROS (NOT DEFAULT SUS) ----------
+        # ---------- OFFICE MACROS ----------
         if filename_l.endswith((".docx", ".xlsx", ".pptx")):
             try:
                 from io import BytesIO
@@ -71,7 +70,7 @@ def main(msg):
             except Exception:
                 pass
 
-        # ---------- PDF JAVASCRIPT (NOT DEFAULT SUS) ----------
+        # ---------- PDF JAVASCRIPT ----------
         if filename_l.endswith(".pdf"):
             if b"/JavaScript" in payload or b"/JS" in payload:
                 findings.append({
@@ -81,7 +80,6 @@ def main(msg):
                 })
 
         # ---------- MIME MISMATCH ----------
-        ctype = part.get_content_type()
         if filename_l.endswith(".pdf") and ctype != "application/pdf":
             findings.append({
                 "file": filename,
