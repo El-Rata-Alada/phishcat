@@ -49,7 +49,7 @@ def _extract_auth_domain(headers: dict, key: str) -> str | None:
 def _homoglyph_check(value: str) -> list:
     hits = []
 
-    # flag any non‑ASCII immediately
+    # flag any non-ASCII immediately
     for ch in value:
         if ord(ch) > 127:
             hits.append(ch)
@@ -169,6 +169,8 @@ def main(headers: dict) -> dict:
         return {
             "status": "done",
             "from_domain": from_domain,
+            "identities": identities,
+            "domains": domains,
             "auth": auth,
             "findings": findings
         }
