@@ -1,3 +1,6 @@
+from email.parser import BytesParser
+from email import policy
+
 def main(eml_path: str) -> dict:
     with open(eml_path, "rb") as f:
         msg = BytesParser(policy=policy.default).parse(f)
