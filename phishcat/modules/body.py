@@ -3,176 +3,170 @@ try:
     import re
     import os
     from urllib.parse import urlparse
+    from bs4 import BeautifulSoup
 except ImportError:
-    print("[!] Missing dependency: urllib / re")
+    print("[!] Missing dependency: urllib / re / bs4")
     raise
 
 
-# -------------------------
-# Regex patterns
-# -------------------------
+# ---------------- REGEX DEFINITIONS ----------------
 
-URL_REGEX = re.compile(
-    r'\b(?:https?://|www\.)[^\s"<>()]+',
+URL_REGEX = re.compile(r'(https?://[^\s"<>()]+)', re.IGNORECASE)
+
+ANCHOR_REGEX = re.compile(
+    r'<a [^>]*href=["\'](.*?)["\']',
     re.IGNORECASE
 )
 
 EMAIL_REGEX = re.compile(
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
-    re.IGNORECASE
+    r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
 )
 
 PHONE_REGEX = re.compile(
-    r'\b\+?\d[\d\s\-]{7,14}\d\b'
+    r'\b(\+?\d[\d\s\-]{7,}\d)\b'
 )
 
-SHORTENER_DOMAINS = {
-    "bit.ly",
-    "tinyurl.com",
-    "t.co",
-    "goo.gl",
-    "is.gd",
-    "ow.ly",
-    "buff.ly",
-    "rebrand.ly",
-    "cutt.ly",
-    "shorturl.at"
-}
+SHORTENER_DOMAINS = (
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl",
+    "is.gd", "buff.ly", "ow.ly", "rebrand.ly"
+)
+
+IP_REGEX = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
 
 
-# -------------------------
-# Load keyword list
-# -------------------------
-
-def _load_keywords():
-    keywords = []
-    try:
-        base_dir = os.path.dirname(__file__)
-        path = os.path.join(base_dir, "keywords.txt")
-
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    kw = line.strip().lower()
-                    if kw:
-                        keywords.append(kw)
-    except Exception:
-        pass
-
-    return keywords
-
-
-KEYWORDS = _load_keywords()
-
-
-# -------------------------
-# Helper functions
-# -------------------------
+# ---------------- HELPERS ----------------
 
 def _normalize_domain(url: str) -> str | None:
     try:
-        if not url.startswith("http"):
-            url = "http://" + url
         parsed = urlparse(url)
         return parsed.netloc.lower()
     except Exception:
         return None
 
 
-def _is_shortener(domain: str) -> bool:
-    return domain in SHORTENER_DOMAINS
+def _ip_check(url: str) -> bool:
+    domain = _normalize_domain(url)
+    if not domain:
+        return False
+    return bool(IP_REGEX.search(domain))
 
 
-def _extract_text(body_input):
+def _load_keywords():
+    keywords = []
+    path = os.path.join(os.path.dirname(__file__), "keywords.txt")
+
+    if not os.path.isfile(path):
+        return keywords
+
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            word = line.strip().lower()
+            if word and not word.startswith("#"):
+                keywords.append(word)
+
+    return keywords
+
+
+# ---------------- MAIN BODY ANALYSIS ----------------
+
+def main(bodies: dict) -> dict:
     """
-    Accepts either:
-    - string body
-    - loader body dict
-    Returns a single text string.
+    Accepts:
+        {
+          "text/plain": [...],
+          "text/html": [...]
+        }
     """
-    if isinstance(body_input, str):
-        return body_input
 
-    if isinstance(body_input, dict):
-        # Prefer plain text
-        if body_input.get("text/plain"):
-            return "\n".join(body_input["text/plain"])
-        elif body_input.get("text/html"):
-            return "\n".join(body_input["text/html"])
-
-    return ""
-
-
-# -------------------------
-# Main analysis
-# -------------------------
-
-def main(body_input) -> dict:
     findings = []
     urls_found = set()
+    anchors_found = set()
     emails_found = set()
     phones_found = set()
+    short_urls = set()
     keyword_hits = set()
 
     try:
-        body = _extract_text(body_input)
+        text_body = ""
 
-        if not body or not body.strip():
+        # Prefer plain text
+        if bodies.get("text/plain"):
+            text_body = "\n".join(bodies["text/plain"])
+
+        # Fallback to HTML
+        elif bodies.get("text/html"):
+            html = "\n".join(bodies["text/html"])
+            soup = BeautifulSoup(html, "lxml")
+            text_body = soup.get_text(separator="\n")
+
+        if not text_body or not text_body.strip():
             return {
                 "status": "empty",
-                "body": body,
+                "body": "",
                 "urls": [],
+                "anchors": [],
                 "emails": [],
                 "phones": [],
-                "keywords": [],
+                "short_urls": [],
+                "keyword_hits": [],
                 "findings": []
             }
 
-        body_lower = body.lower()
-
-        # ---- URLs ----
-        for u in URL_REGEX.findall(body):
+        # ---------------- URL DETECTION ----------------
+        urls = URL_REGEX.findall(text_body)
+        for u in urls:
             urls_found.add(u.strip())
 
-        # ---- Emails ----
-        for e in EMAIL_REGEX.findall(body):
-            emails_found.add(e.strip())
+        # ---------------- ANCHOR DETECTION ----------------
+        anchors = ANCHOR_REGEX.findall(text_body)
+        for a in anchors:
+            anchors_found.add(a.strip())
 
-        # ---- Phones ----
-        for p in PHONE_REGEX.findall(body):
+        # ---------------- EMAIL DETECTION ----------------
+        emails = EMAIL_REGEX.findall(text_body)
+        for e in emails:
+            emails_found.add(e)
+
+        # ---------------- PHONE DETECTION ----------------
+        phones = PHONE_REGEX.findall(text_body)
+        for p in phones:
             phones_found.add(p.strip())
 
-        # ---- Keyword matching ----
-        for kw in KEYWORDS:
-            if kw in body_lower:
-                keyword_hits.add(kw)
-                findings.append({
-                    "issue": f"Keyword match: '{kw}'",
-                    "severity": "medium",
-                    "detail": {}
-                })
-
-        # ---- URL analysis ----
+        # ---------------- SHORT URL DETECTION ----------------
         for url in urls_found:
             domain = _normalize_domain(url)
-            if not domain:
-                continue
-
-            if _is_shortener(domain):
+            if domain and any(s in domain for s in SHORTENER_DOMAINS):
+                short_urls.add(url)
                 findings.append({
                     "issue": "Shortened URL detected",
                     "severity": "medium",
-                    "detail": {"url": url, "domain": domain}
+                    "detail": url
                 })
 
-        # ---- Console output ----
-        print("[+] Full body (readable):\n")
-        print(body[:1000] + ("\n...[truncated]" if len(body) > 1000 else ""))
+        # ---------------- IP URL DETECTION ----------------
+        for url in urls_found:
+            if _ip_check(url):
+                findings.append({
+                    "issue": "URL uses IP address",
+                    "severity": "high",
+                    "detail": url
+                })
 
-        if urls_found:
-            print("\n[+] URLs found:")
-            for u in urls_found:
-                print(f"  - {u}")
+        # ---------------- KEYWORD DETECTION ----------------
+        keywords = _load_keywords()
+        lower_body = text_body.lower()
+
+        for word in keywords:
+            if word in lower_body:
+                keyword_hits.add(word)
+                findings.append({
+                    "issue": "Suspicious keyword",
+                    "severity": "medium",
+                    "detail": word
+                })
+
+        # ---------------- CONSOLE OUTPUT ----------------
+        print("[+] Body analysis:")
 
         if emails_found:
             print("\n[+] Email addresses found:")
@@ -184,23 +178,26 @@ def main(body_input) -> dict:
             for p in phones_found:
                 print(f"  - {p}")
 
-        if keyword_hits:
-            print("\n[!] Keyword matches:")
-            for k in keyword_hits:
-                print(f"  - {k}")
+        if urls_found:
+            print("\n[+] URLs found:")
+            for u in urls_found:
+                print(f"  - {u}")
 
         if findings:
-            print("\n[!] Suspicious findings detected")
-        else:
-            print("\n[+] No suspicious indicators detected")
+            print("\n[!] Body findings:")
+            for f in findings:
+                print(f"  - {f['issue']} [{f['severity']}]")
 
+        # ---------------- RETURN STRUCTURE ----------------
         return {
             "status": "done",
-            "body": body,
+            "body": text_body,
             "urls": list(urls_found),
+            "anchors": list(anchors_found),
             "emails": list(emails_found),
             "phones": list(phones_found),
-            "keywords": list(keyword_hits),
+            "short_urls": list(short_urls),
+            "keyword_hits": list(keyword_hits),
             "findings": findings
         }
 
