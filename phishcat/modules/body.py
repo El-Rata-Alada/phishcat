@@ -83,11 +83,31 @@ def _is_shortener(domain: str) -> bool:
     return domain in SHORTENER_DOMAINS
 
 
+def _extract_text(body_input):
+    """
+    Accepts either:
+    - string body
+    - loader body dict
+    Returns a single text string.
+    """
+    if isinstance(body_input, str):
+        return body_input
+
+    if isinstance(body_input, dict):
+        # Prefer plain text
+        if body_input.get("text/plain"):
+            return "\n".join(body_input["text/plain"])
+        elif body_input.get("text/html"):
+            return "\n".join(body_input["text/html"])
+
+    return ""
+
+
 # -------------------------
 # Main analysis
 # -------------------------
 
-def main(body: str) -> dict:
+def main(body_input) -> dict:
     findings = []
     urls_found = set()
     emails_found = set()
@@ -95,6 +115,8 @@ def main(body: str) -> dict:
     keyword_hits = set()
 
     try:
+        body = _extract_text(body_input)
+
         if not body or not body.strip():
             return {
                 "status": "empty",
@@ -186,6 +208,6 @@ def main(body: str) -> dict:
         print("[!] Body module error:", str(e))
         return {
             "status": "error",
-            "body": body,
+            "body": "",
             "error": str(e)
         }
