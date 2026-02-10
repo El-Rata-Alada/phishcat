@@ -1,4 +1,3 @@
-
 # Dependency check
 try:
     import re
@@ -62,7 +61,7 @@ def _ip_check(url: str) -> bool:
     return bool(IP_REGEX.search(domain))
 
 
-def main(body: str) -> dict:
+def main(body) -> dict:
     """
     Body analysis with:
     - full body preserved
@@ -71,6 +70,12 @@ def main(body: str) -> dict:
     - homoglyph detection
     - IP-based URL detection
     """
+
+    # ---- normalize input (fix for dict body structure) ----
+    if isinstance(body, dict):
+        text = body.get("text", "")
+        html = body.get("html", "")
+        body = (text or "") + "\n" + (html or "")
 
     findings = []
     urls_found = set()
@@ -115,7 +120,7 @@ def main(body: str) -> dict:
 
         # ---- human-readable output ----
         print("[+] Full body (readable):\n")
-        print(body[:1000] + ("\n...[truncated]" if len(body) > 1000 else ""))  # show first 1000 chars
+        print(body[:1000] + ("\n...[truncated]" if len(body) > 1000 else ""))
 
         if urls_found:
             print("\n[+] URLs found in body:")
