@@ -1,6 +1,7 @@
 # Dependency check
 try:
     import re
+    import os
     from urllib.parse import urlparse
 except ImportError:
     print("[!] Missing dependency: urllib / re")
@@ -25,7 +26,6 @@ PHONE_REGEX = re.compile(
     r'\b\+?\d[\d\s\-]{7,14}\d\b'
 )
 
-# Shortened URL domains
 SHORTENER_DOMAINS = {
     "bit.ly",
     "tinyurl.com",
@@ -38,6 +38,31 @@ SHORTENER_DOMAINS = {
     "cutt.ly",
     "shorturl.at"
 }
+
+
+# -------------------------
+# Load keyword list
+# -------------------------
+
+def _load_keywords():
+    keywords = []
+    try:
+        base_dir = os.path.dirname(__file__)
+        path = os.path.join(base_dir, "keywords.txt")
+
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    kw = line.strip().lower()
+                    if kw:
+                        keywords.append(kw)
+    except Exception:
+        pass
+
+    return keywords
+
+
+KEYWORDS = _load_keywords()
 
 
 # -------------------------
@@ -59,7 +84,7 @@ def _is_shortener(domain: str) -> bool:
 
 
 # -------------------------
-# Main analysis function
+# Main analysis
 # -------------------------
 
 def main(body: str) -> dict:
@@ -67,6 +92,7 @@ def main(body: str) -> dict:
     urls_found = set()
     emails_found = set()
     phones_found = set()
+    keyword_hits = set()
 
     try:
         if not body or not body.strip():
@@ -76,23 +102,33 @@ def main(body: str) -> dict:
                 "urls": [],
                 "emails": [],
                 "phones": [],
+                "keywords": [],
                 "findings": []
             }
 
+        body_lower = body.lower()
+
         # ---- URLs ----
-        urls = URL_REGEX.findall(body)
-        for u in urls:
+        for u in URL_REGEX.findall(body):
             urls_found.add(u.strip())
 
         # ---- Emails ----
-        emails = EMAIL_REGEX.findall(body)
-        for e in emails:
+        for e in EMAIL_REGEX.findall(body):
             emails_found.add(e.strip())
 
         # ---- Phones ----
-        phones = PHONE_REGEX.findall(body)
-        for p in phones:
+        for p in PHONE_REGEX.findall(body):
             phones_found.add(p.strip())
+
+        # ---- Keyword matching ----
+        for kw in KEYWORDS:
+            if kw in body_lower:
+                keyword_hits.add(kw)
+                findings.append({
+                    "issue": f"Keyword match: '{kw}'",
+                    "severity": "medium",
+                    "detail": {}
+                })
 
         # ---- URL analysis ----
         for url in urls_found:
@@ -107,7 +143,7 @@ def main(body: str) -> dict:
                     "detail": {"url": url, "domain": domain}
                 })
 
-        # ---- Console output (debug style) ----
+        # ---- Console output ----
         print("[+] Full body (readable):\n")
         print(body[:1000] + ("\n...[truncated]" if len(body) > 1000 else ""))
 
@@ -126,12 +162,15 @@ def main(body: str) -> dict:
             for p in phones_found:
                 print(f"  - {p}")
 
+        if keyword_hits:
+            print("\n[!] Keyword matches:")
+            for k in keyword_hits:
+                print(f"  - {k}")
+
         if findings:
-            print("\n[!] Suspicious findings:")
-            for f in findings:
-                print(f"  - {f['detail']['url']} ({f['issue']})")
+            print("\n[!] Suspicious findings detected")
         else:
-            print("\n[+] No suspicious URLs detected")
+            print("\n[+] No suspicious indicators detected")
 
         return {
             "status": "done",
@@ -139,6 +178,7 @@ def main(body: str) -> dict:
             "urls": list(urls_found),
             "emails": list(emails_found),
             "phones": list(phones_found),
+            "keywords": list(keyword_hits),
             "findings": findings
         }
 
