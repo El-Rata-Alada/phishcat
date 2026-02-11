@@ -23,10 +23,9 @@ def _hashes(data: bytes) -> dict:
 def main(attachments):
     zipfile = _check_deps()
     if not zipfile:
-        return {"files": [], "findings": []}
+        return []
 
-    files = []
-    findings = []
+    results = []
 
     for part in attachments:
         filename = part.get("filename") or "unknown"
@@ -34,48 +33,25 @@ def main(attachments):
         size = len(payload)
         filename_l = filename.lower()
 
-        file_info = {
-            "filename": filename,
-            "size": size,
-            "hashes": _hashes(payload),
-            "findings": []
-        }
+        findings = []
 
         # ---------- HIGH RISK EXTENSIONS ----------
         if filename_l.endswith((
             ".exe", ".bat", ".cmd", ".scr",
             ".js", ".vbs", ".ps1", ".com", ".msi"
         )):
-            issue = "Executable or script attachment"
-            file_info["findings"].append(issue)
-            findings.append({
-                "file": filename,
-                "severity": "HIGH",
-                "reason": issue
-            })
+            findings.append("Executable or script attachment")
 
         # ---------- DOUBLE EXTENSION ----------
         parts = filename_l.split(".")
         if len(parts) > 2 and parts[-1] in (
             "exe", "js", "bat", "scr", "vbs", "ps1", "com"
         ):
-            issue = "Double extension detected"
-            file_info["findings"].append(issue)
-            findings.append({
-                "file": filename,
-                "severity": "HIGH",
-                "reason": issue
-            })
+            findings.append("Double extension detected")
 
         # ---------- ARCHIVES ----------
         if filename_l.endswith((".zip", ".rar", ".7z", ".iso")):
-            issue = "Archive attachment (manual inspection advised)"
-            file_info["findings"].append(issue)
-            findings.append({
-                "file": filename,
-                "severity": "MEDIUM",
-                "reason": issue
-            })
+            findings.append("Archive attachment (manual inspection advised)")
 
         # ---------- OFFICE MACROS ----------
         if filename_l.endswith((".docx", ".xlsx", ".pptx")):
@@ -83,30 +59,20 @@ def main(attachments):
                 from io import BytesIO
                 z = zipfile.ZipFile(BytesIO(payload))
                 if "vbaProject.bin" in z.namelist():
-                    issue = "Office document contains VBA macros"
-                    file_info["findings"].append(issue)
-                    findings.append({
-                        "file": filename,
-                        "severity": "HIGH",
-                        "reason": issue
-                    })
+                    findings.append("Office document contains VBA macros")
             except Exception:
                 pass
 
         # ---------- PDF JAVASCRIPT ----------
         if filename_l.endswith(".pdf"):
             if b"/JavaScript" in payload or b"/JS" in payload:
-                issue = "PDF contains embedded JavaScript"
-                file_info["findings"].append(issue)
-                findings.append({
-                    "file": filename,
-                    "severity": "MEDIUM",
-                    "reason": issue
-                })
+                findings.append("PDF contains embedded JavaScript")
 
-        files.append(file_info)
+        results.append({
+            "title": filename,
+            "size": size,
+            "hashes": _hashes(payload),
+            "findings": findings or ["none"]
+        })
 
-    return {
-        "files": files,
-        "findings": findings
-    }
+    return results
