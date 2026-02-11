@@ -107,6 +107,7 @@ def _extract_text(body_input):
 # Main analysis
 # -------------------------
 
+def main(body: str) -> dict:
 def main(body_input) -> dict:
     findings = []
     urls_found = set()
@@ -208,6 +209,7 @@ def main(body_input) -> dict:
         print("[!] Body module error:", str(e))
         return {
             "status": "error",
+            "body": body,
             "body": "",
             "error": str(e)
         }
