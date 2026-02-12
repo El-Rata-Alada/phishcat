@@ -9,7 +9,9 @@ except ImportError:
 # -------------------------
 # Homoglyph mapping
 # -------------------------
-HOMOGLYPHS = {
+
+# too many false positives. so removing this for now.
+"""HOMOGLYPHS = {
     "a": ["а", "ɑ"],
     "c": ["с"],
     "e": ["е"],
@@ -20,6 +22,7 @@ HOMOGLYPHS = {
     "y": ["у"],
     "l": ["ⅼ", "1", "!"],
 }
+"""
 
 # -------------------------
 # Regex patterns
@@ -77,7 +80,7 @@ def _normalize_domain(url: str) -> str | None:
         return None
 
 
-def _homoglyph_check(value: str) -> list:
+"""def _homoglyph_check(value: str) -> list:
     hits = []
 
     for ch in value:
@@ -90,6 +93,7 @@ def _homoglyph_check(value: str) -> list:
                 hits.append(g)
 
     return list(set(hits))
+    """
 
 
 def _ip_check(url: str) -> bool:
@@ -155,7 +159,7 @@ def main(body_input) -> dict:
                 continue
 
             # homoglyph / unicode
-            homoglyph_hits = _homoglyph_check(domain)
+           """ homoglyph_hits = _homoglyph_check(domain)
             if homoglyph_hits:
                 findings.append({
                     "issue": "Domain contains suspicious lookalike or Unicode characters",
@@ -165,6 +169,7 @@ def main(body_input) -> dict:
                         "matched": homoglyph_hits
                     }
                 })
+                """
 
             # IP-based URL
             if _ip_check(url):
@@ -183,7 +188,7 @@ def main(body_input) -> dict:
                 })
 
         # ---- detect homoglyph/unicode in words ----
-        words = re.findall(r'\b\S+\b', body)
+      """  words = re.findall(r'\b\S+\b', body)
         for w in words:
             hits = _homoglyph_check(w)
             if hits:
@@ -195,6 +200,7 @@ def main(body_input) -> dict:
                         "matched": hits
                     }
                 })
+                """
 
         return {
             "status": "done",
