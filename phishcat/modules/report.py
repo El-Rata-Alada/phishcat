@@ -1,21 +1,11 @@
-def _print_section(title, findings):
-    print("\n" + "=" * 60)
-    print(f"[ {title} ]")
-    print("=" * 60)
-
-    if not findings:
-        print("No issues found.")
-        return
-
-    for i, item in enumerate(findings, 1):
-        if isinstance(item, dict):
-            print(f"\n{i}. {item.get('title', 'Finding')}")
-            for k, v in item.items():
-                if k == "title":
-                    continue
-                print(f"   - {k}: {v}")
-        else:
-            print(f"{i}. {item}")
+def _format_size(size_bytes: int) -> str:
+    """Convert size to bytes, KB, or MB automatically."""
+    if size_bytes < 1024:
+        return f"{size_bytes} bytes"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
 
 
 def _print_headers(header_data):
@@ -31,17 +21,20 @@ def _print_headers(header_data):
     auth = header_data.get("auth", {})
     findings = header_data.get("findings", [])
 
+    # ---- Sender identities ----
     print("\n[ SENDER IDENTITIES ]")
     for key in ["From", "Reply-To", "Return-Path", "Sender", "Message-ID"]:
         value = identities.get(key)
         if value:
             print(f"{key}: {value}")
 
+    # ---- Authentication ----
     print("\n[ AUTHENTICATION ]")
     for key in ["SPF", "DKIM", "DMARC", "ARC"]:
         val = auth.get(key)
         print(f"{key}: {val or 'none'}")
 
+    # ---- Findings ----
     print("\n[ FINDINGS ]")
     if findings:
         for f in findings:
@@ -59,32 +52,58 @@ def _print_body(body_data):
         print("Body analysis failed.")
         return
 
-    print(f"Status: {body_data.get('status', 'unknown')}")
-
     urls = body_data.get("urls", [])
-    anchors = body_data.get("anchors", [])
     emails = body_data.get("emails", [])
     phones = body_data.get("phones", [])
-    findings = body_data.get("findings", [])
+    suspicious = body_data.get("findings", [])
 
-    print(f"URLs found: {len(urls)}")
-    for u in urls:
-        print(f" - {u}")
+    print(f"\nURLs found: {len(urls)}")
+    print(f"Email addresses found: {len(emails)}")
+    print(f"Phone numbers found: {len(phones)}")
 
-    print(f"\nEmails found: {len(emails)}")
-    for e in emails:
-        print(f" - {e}")
-
-    print(f"\nPhone numbers found: {len(phones)}")
-    for p in phones:
-        print(f" - {p}")
-
-    print("\nFindings:")
-    if findings:
-        for f in findings:
-            print(f" - {f['issue']} [{f['severity']}]")
+    print("\n[ SUSPICIOUS FINDINGS ]")
+    if suspicious:
+        for f in suspicious:
+            issue = f.get("issue")
+            severity = f.get("severity")
+            detail = f.get("detail", {})
+            value = detail.get("url") or detail.get("value") or ""
+            print(f" - {value} → {issue} [{severity}]")
     else:
-        print(" none")
+        print(" None")
+
+
+def _print_attachments(att_data):
+    print("\n" + "=" * 60)
+    print("[ ATTACHMENTS ]")
+    print("=" * 60)
+
+    if not att_data or not att_data.get("files"):
+        print("No attachments found.")
+        return
+
+    files = att_data.get("files", [])
+
+    for i, f in enumerate(files, 1):
+        print(f"\n{i}. {f['filename']}")
+
+        size_str = _format_size(f.get("size", 0))
+        print(f"   Size: {size_str}")
+
+        hashes = f.get("hashes", {})
+        print("\n   Hashes:")
+        print(f"\n     MD5    : {hashes.get('md5')}")
+        print(f"\n     SHA1   : {hashes.get('sha1')}")
+        print(f"\n     SHA256 : {hashes.get('sha256')}")
+        print(f"\n     SHA512 : {hashes.get('sha512')}")
+
+        findings = f.get("findings", [])
+        if findings:
+            print("\n   Findings:")
+            for item in findings:
+                print(f"     - {item}")
+        else:
+            print("\n   Findings: none")
 
 
 def main(header_findings, body_findings, attachment_findings):
@@ -94,7 +113,7 @@ def main(header_findings, body_findings, attachment_findings):
 
     _print_headers(header_findings)
     _print_body(body_findings)
-    _print_section("ATTACHMENTS", attachment_findings)
+    _print_attachments(attachment_findings)
 
     print("\n" + "#" * 60)
     print("#                END OF REPORT                #")
