@@ -1,11 +1,21 @@
-def _format_size(size_bytes: int) -> str:
-    """Convert size to bytes, KB, or MB automatically."""
-    if size_bytes < 1024:
-        return f"{size_bytes} bytes"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.2f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.2f} MB"
+def _print_section(title, findings):
+    print("\n" + "=" * 60)
+    print(f"[ {title} ]")
+    print("=" * 60)
+
+    if not findings:
+        print("No issues found.")
+        return
+
+    for i, item in enumerate(findings, 1):
+        if isinstance(item, dict):
+            print(f"\n{i}. {item.get('title', 'Finding')}")
+            for k, v in item.items():
+                if k == "title":
+                    continue
+                print(f"   - {k}: {v}")
+        else:
+            print(f"{i}. {item}")
 
 
 def _print_headers(header_data):
@@ -43,65 +53,38 @@ def _print_headers(header_data):
         print(" None")
 
 
-def _print_body(body_data):
-    print("\n" + "=" * 60)
-    print("[ BODY ]")
-    print("=" * 60)
-
-    if not body_data or body_data.get("status") == "error":
-        print("Body analysis failed.")
-        return
-
-    urls = body_data.get("urls", [])
-    emails = body_data.get("emails", [])
-    phones = body_data.get("phones", [])
-    suspicious = body_data.get("findings", [])
-
-    print(f"\nURLs found: {len(urls)}")
-    print(f"Email addresses found: {len(emails)}")
-    print(f"Phone numbers found: {len(phones)}")
-
-    print("\n[ SUSPICIOUS FINDINGS ]")
-    if suspicious:
-        for f in suspicious:
-            issue = f.get("issue")
-            severity = f.get("severity")
-            detail = f.get("detail", {})
-            value = detail.get("url") or detail.get("value") or ""
-            print(f" - {value} → {issue} [{severity}]")
-    else:
-        print(" None")
-
-
-def _print_attachments(att_data):
+def _print_attachments(attachment_data):
     print("\n" + "=" * 60)
     print("[ ATTACHMENTS ]")
     print("=" * 60)
 
-    if not att_data or not att_data.get("files"):
+    if not attachment_data or "files" not in attachment_data:
         print("No attachments found.")
         return
 
-    files = att_data.get("files", [])
+    files = attachment_data.get("files", [])
+
+    if not files:
+        print("No attachments found.")
+        return
 
     for i, f in enumerate(files, 1):
         print(f"\n{i}. {f['filename']}")
-
-        size_str = _format_size(f.get("size", 0))
-        print(f"   Size: {size_str}")
+        print(f"   Size: {f['size']}")
 
         hashes = f.get("hashes", {})
-        print("\n   Hashes:")
-        print(f"\n     MD5    : {hashes.get('md5')}")
-        print(f"\n     SHA1   : {hashes.get('sha1')}")
-        print(f"\n     SHA256 : {hashes.get('sha256')}")
-        print(f"\n     SHA512 : {hashes.get('sha512')}")
+        if hashes:
+            print("\n   Hashes:")
+            print(f"     MD5    : {hashes.get('md5')}")
+            print(f"     SHA1   : {hashes.get('sha1')}")
+            print(f"     SHA256 : {hashes.get('sha256')}")
+            print(f"     SHA512 : {hashes.get('sha512')}")
 
-        findings = f.get("findings", [])
-        if findings:
+        file_findings = f.get("findings", [])
+        if file_findings:
             print("\n   Findings:")
-            for item in findings:
-                print(f"     - {item}")
+            for issue in file_findings:
+                print(f"     - {issue}")
         else:
             print("\n   Findings: none")
 
@@ -111,8 +94,13 @@ def main(header_findings, body_findings, attachment_findings):
     print("#        EMAIL SECURITY ANALYSIS REPORT        #")
     print("#" * 60)
 
+    # Headers
     _print_headers(header_findings)
-    _print_body(body_findings)
+
+    # Body
+    _print_section("BODY", body_findings)
+
+    # Attachments (fixed)
     _print_attachments(attachment_findings)
 
     print("\n" + "#" * 60)
