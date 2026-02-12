@@ -17,9 +17,10 @@ URL_REGEX = re.compile(
 )
 
 EMAIL_REGEX = re.compile(
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    r'\b[a-zA-Z0-9._%+-]{1,64}@[a-zA-Z0-9-]{1,63}(?:\.[a-zA-Z]{2,})+\b',
     re.IGNORECASE
 )
+
 
 PHONE_REGEX = re.compile(
     r'\b\+?\d[\d\s\-]{7,14}\d\b'
