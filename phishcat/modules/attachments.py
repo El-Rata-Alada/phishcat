@@ -8,7 +8,6 @@ def _check_deps():
     except ImportError as e:
         missing = str(e).split()[-1]
         print(f"[!] Missing dependency: {missing}")
-        print(f"    Install using: pip install {missing}")
         return None
 
 
@@ -21,31 +20,32 @@ def _hashes(data: bytes) -> dict:
     }
 
 
+def _format_size(size: int) -> str:
+    if size < 1024:
+        return f"{size} bytes"
+    elif size < 1024 * 1024:
+        return f"{round(size / 1024, 2)} KB"
+    else:
+        return f"{round(size / (1024 * 1024), 2)} MB"
+
+
 def main(attachments):
     zipfile = _check_deps()
     if not zipfile:
-        return []
         return {"files": [], "findings": []}
 
     files = []
     findings = []
-
-    for att in attachments:
-        filename = att.get("filename")
-        if not filename:
-            continue
 
     for part in attachments:
         filename = part.get("filename") or "unknown"
         payload = part.get("payload") or b""
         size = len(payload)
         filename_l = filename.lower()
-        payload = att.get("payload") or b""
-        ctype = att.get("content_type", "")
 
         file_info = {
             "filename": filename,
-            "size": size,
+            "size": _format_size(size),
             "hashes": _hashes(payload),
             "findings": []
         }
@@ -60,10 +60,8 @@ def main(attachments):
             findings.append({
                 "file": filename,
                 "severity": "HIGH",
-                "reason": "Executable or script attachment"
                 "reason": issue
             })
-            continue
 
         # ---------- DOUBLE EXTENSION ----------
         parts = filename_l.split(".")
@@ -75,7 +73,6 @@ def main(attachments):
             findings.append({
                 "file": filename,
                 "severity": "HIGH",
-                "reason": "Double extension detected"
                 "reason": issue
             })
 
@@ -86,12 +83,12 @@ def main(attachments):
             findings.append({
                 "file": filename,
                 "severity": "MEDIUM",
-                "reason": "Archive attachment (manual inspection advised)"
                 "reason": issue
             })
 
         # ---------- OFFICE MACROS ----------
-@@ -62,29 +83,30 @@ def main(attachments):
+        if filename_l.endswith((".docx", ".xlsx", ".pptx")):
+            try:
                 from io import BytesIO
                 z = zipfile.ZipFile(BytesIO(payload))
                 if "vbaProject.bin" in z.namelist():
@@ -100,7 +97,6 @@ def main(attachments):
                     findings.append({
                         "file": filename,
                         "severity": "HIGH",
-                        "reason": "Office document contains VBA macros"
                         "reason": issue
                     })
             except Exception:
@@ -114,20 +110,11 @@ def main(attachments):
                 findings.append({
                     "file": filename,
                     "severity": "MEDIUM",
-                    "reason": "PDF contains embedded JavaScript"
                     "reason": issue
                 })
 
-        # ---------- MIME MISMATCH ----------
-        if filename_l.endswith(".pdf") and ctype != "application/pdf":
-            findings.append({
-                "file": filename,
-                "severity": "MEDIUM",
-                "reason": "MIME type mismatch for PDF"
-            })
         files.append(file_info)
 
-    return findings
     return {
         "files": files,
         "findings": findings
