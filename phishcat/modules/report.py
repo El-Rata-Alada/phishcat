@@ -1,140 +1,131 @@
-import datetime
+def main(header_data, body_data, attachment_data):
+    lines = []
 
+    def p(text=""):
+        print(text)
+        lines.append(text)
 
-def _print_email_content(body_data):
-    print("\n" + "=" * 60)
-    print("[ EMAIL CONTENT ]")
-    print("=" * 60)
+    # ------------------------------------------------
+    # REPORT HEADER
+    # ------------------------------------------------
+    p("\n" + "#" * 60)
+    p("#        EMAIL SECURITY ANALYSIS REPORT        #")
+    p("#" * 60)
 
-    content = body_data.get("content", "")
-    if content:
-        print("\n" + content.strip())
-    else:
-        print("\n(No readable body content)")
-
-
-def _print_headers(header_data):
-    print("\n" + "=" * 60)
-    print("[ HEADERS ]")
-    print("=" * 60)
+    # ------------------------------------------------
+    # HEADERS SECTION
+    # ------------------------------------------------
+    p("\n" + "=" * 60)
+    p("[ HEADERS ]")
+    p("=" * 60)
 
     if not header_data or header_data.get("status") == "error":
-        print("Header analysis failed.")
-        return
-
-    identities = header_data.get("identities", {})
-    auth = header_data.get("auth", {})
-    findings = header_data.get("findings", [])
-
-    print("\n[ SENDER IDENTITIES ]")
-    for key in ["From", "Reply-To", "Return-Path", "Sender", "Message-ID"]:
-        val = identities.get(key)
-        if val:
-            print(f"{key}: {val}")
-
-    print("\n[ AUTHENTICATION ]")
-    for key in ["SPF", "DKIM", "DMARC", "ARC"]:
-        print(f"{key}: {auth.get(key) or 'none'}")
-
-    print("\n[ FINDINGS ]")
-    if findings:
-        for f in findings:
-            print(f" - {f['issue']} [{f['severity']}]")
+        p("Header analysis failed.")
     else:
-        print(" None")
+        identities = header_data.get("identities", {})
+        auth = header_data.get("auth", {})
+        findings = header_data.get("findings", [])
 
+        p("\n[ SENDER IDENTITIES ]")
+        for key in ["From", "Reply-To", "Return-Path", "Sender", "Message-ID"]:
+            value = identities.get(key)
+            if value:
+                p(f"{key}: {value}")
 
-def _print_body(body_data):
-    print("\n" + "=" * 60)
-    print("[ BODY ]")
-    print("=" * 60)
+        p("\n[ AUTHENTICATION ]")
+        for key in ["SPF", "DKIM", "DMARC", "ARC"]:
+            val = auth.get(key)
+            p(f"{key}: {val or 'none'}")
 
-    emails = body_data.get("emails", [])
-    phones = body_data.get("phones", [])
-    urls = body_data.get("urls", [])
-    media_urls = body_data.get("media_urls", [])
-    findings = body_data.get("findings", [])
-
-    # Emails
-    print(f"\n[ EMAIL ADDRESSES – {len(emails)} ]")
-    for i, e in enumerate(emails, 1):
-        print(f" {i}. {e}")
-
-    # Phones
-    print(f"\n[ PHONE NUMBERS – {len(phones)} ]")
-    for i, p in enumerate(phones, 1):
-        print(f" {i}. {p}")
-
-    # URLs
-    print(f"\n[ URLS – NON-MEDIA – {len(urls)} ]")
-    for i, u in enumerate(urls, 1):
-        print(f" {i}. {u}")
-
-    print(f"\n[ URLS – MEDIA – {len(media_urls)} ]")
-    for i, u in enumerate(media_urls, 1):
-        print(f" {i}. {u}")
-
-    # Findings
-    print("\n[ SUSPICIOUS FINDINGS ]")
-    if findings:
-        for f in findings:
-            print(f" - {f['detail']} → {f['issue']} [{f['severity']}]")
-    else:
-        print(" None")
-
-
-def _print_attachments(data):
-    print("\n" + "=" * 60)
-    print("[ ATTACHMENTS ]")
-    print("=" * 60)
-
-    files = data.get("files", [])
-    if not files:
-        print("No attachments found.")
-        return
-
-    for i, f in enumerate(files, 1):
-        print(f"\n{i}. {f['filename']}")
-        print(f"   Size: {f['size']}")
-
-        hashes = f.get("hashes", {})
-        print("\n   Hashes:")
-        print(f"     MD5    : {hashes.get('md5')}")
-        print(f"     SHA1   : {hashes.get('sha1')}")
-        print(f"     SHA256 : {hashes.get('sha256')}")
-        print(f"     SHA512 : {hashes.get('sha512')}")
-
-        issues = f.get("findings", [])
-        if issues:
-            print("\n   Findings:")
-            for issue in issues:
-                print(f"     - {issue}")
+        p("\n[ FINDINGS ]")
+        if findings:
+            for f in findings:
+                p(f" - {f['issue']} [{f['severity']}]")
         else:
-            print("\n   Findings: none")
+            p(" None")
 
+    # ------------------------------------------------
+    # BODY SECTION
+    # ------------------------------------------------
+    p("\n" + "=" * 60)
+    p("[ BODY ]")
+    p("=" * 60)
 
-def main(header_data, body_data, attachment_data):
-    # 1. Email content first
-    _print_email_content(body_data)
+    if not body_data or body_data.get("status") == "error":
+        p("Body analysis failed.")
+    else:
+        urls = sorted(body_data.get("urls", []))
+        anchors = sorted(body_data.get("anchors", []))
+        emails = sorted(body_data.get("emails", []))
+        phones = sorted(body_data.get("phones", []))
+        findings = body_data.get("findings", [])
 
-    # 2. Report start
-    print("\n" + "#" * 60)
-    print("#        EMAIL SECURITY ANALYSIS REPORT        #")
-    print("#" * 60)
+        # URLs
+        all_urls = sorted(set(urls + anchors))
+        p(f"\nURLs found: {len(all_urls)}")
+        for u in all_urls:
+            p(f" - {u}")
 
-    _print_headers(header_data)
-    _print_body(body_data)
-    _print_attachments(attachment_data)
+        # Emails
+        p(f"\nEmail addresses found: {len(emails)}")
+        for e in emails:
+            p(f" - {e}")
 
-    print("\n" + "#" * 60)
-    print("#                END OF REPORT                #")
-    print("#" * 60)
+        # Phones
+        p(f"\nPhone numbers found: {len(phones)}")
+        for ph in phones:
+            p(f" - {ph}")
 
-    # 3. Save prompt
-    choice = input("\nWould you like to save this report to a file? (y/n): ").strip().lower()
-    if choice == "y":
-        filename = f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        with open(filename, "w", encoding="utf-8") as f:
-            # Simplest approach: re-run print to file later if needed
-            f.write("Report saved via terminal version.\n")
-        print(f"[+] Report saved to {filename}")
+        # Suspicious findings
+        p("\n[ SUSPICIOUS FINDINGS ]")
+        if findings:
+            for f in findings:
+                detail = f.get("detail", {})
+                value = detail.get("url") or detail.get("value") or ""
+                p(f" - {value} → {f['issue']} [{f['severity']}]")
+        else:
+            p(" None")
+
+    # ------------------------------------------------
+    # ATTACHMENTS SECTION
+    # ------------------------------------------------
+    p("\n" + "=" * 60)
+    p("[ ATTACHMENTS ]")
+    p("=" * 60)
+
+    if not attachment_data or "files" not in attachment_data:
+        p("No attachments found.")
+    else:
+        files = attachment_data.get("files", [])
+
+        if not files:
+            p("No attachments found.")
+        else:
+            for i, f in enumerate(files, 1):
+                p(f"\n{i}. {f['filename']}")
+                p(f"   Size: {f['size']}")
+
+                hashes = f.get("hashes", {})
+                if hashes:
+                    p("\n   Hashes:")
+                    p(f"     MD5    : {hashes.get('md5')}")
+                    p(f"     SHA1   : {hashes.get('sha1')}")
+                    p(f"     SHA256 : {hashes.get('sha256')}")
+                    p(f"     SHA512 : {hashes.get('sha512')}")
+
+                file_findings = f.get("findings", [])
+                if file_findings:
+                    p("\n   Findings:")
+                    for issue in file_findings:
+                        p(f"     - {issue}")
+                else:
+                    p("\n   Findings: none")
+
+    # ------------------------------------------------
+    # END
+    # ------------------------------------------------
+    p("\n" + "#" * 60)
+    p("#                END OF REPORT                #")
+    p("#" * 60)
+
+    return "\n".join(lines)
