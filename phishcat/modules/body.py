@@ -7,6 +7,21 @@ except ImportError:
     raise
 
 # -------------------------
+# Homoglyph mapping
+# -------------------------
+HOMOGLYPHS = {
+    "a": ["а", "ɑ"],
+    "c": ["с"],
+    "e": ["е"],
+    "i": ["і", "1"],
+    "o": ["о", "0"],
+    "p": ["р"],
+    "s": ["ѕ", "$"],
+    "y": ["у"],
+    "l": ["ⅼ", "1", "!"],
+}
+
+# -------------------------
 # Regex patterns
 # -------------------------
 
@@ -62,6 +77,21 @@ def _normalize_domain(url: str) -> str | None:
         return None
 
 
+def _homoglyph_check(value: str) -> list:
+    hits = []
+
+    for ch in value:
+        if ord(ch) > 127:
+            hits.append(ch)
+
+    for _, lookalikes in HOMOGLYPHS.items():
+        for g in lookalikes:
+            if g in value:
+                hits.append(g)
+
+    return list(set(hits))
+
+
 def _ip_check(url: str) -> bool:
     domain = _normalize_domain(url)
     if not domain:
@@ -71,14 +101,6 @@ def _ip_check(url: str) -> bool:
 
 def _is_shortener(domain: str) -> bool:
     return domain in SHORTENER_DOMAINS
-
-
-def _contains_unicode(value: str) -> bool:
-    """Detect any non-ASCII characters."""
-    for ch in value:
-        if ord(ch) > 127:
-            return True
-    return False
 
 
 # -------------------------
@@ -101,7 +123,7 @@ def main(body_input) -> dict:
         body = body_input or ""
 
     try:
-        if not body.strip():
+        if not body or not body.strip():
             return {
                 "status": "empty",
                 "urls": [],
@@ -132,12 +154,16 @@ def main(body_input) -> dict:
             if not domain:
                 continue
 
-            # Unicode in domain
-            if _contains_unicode(domain):
+            # homoglyph / unicode
+            homoglyph_hits = _homoglyph_check(domain)
+            if homoglyph_hits:
                 findings.append({
-                    "issue": "Unicode characters in URL domain",
+                    "issue": "Domain contains suspicious lookalike or Unicode characters",
                     "severity": "high",
-                    "detail": {"url": url}
+                    "detail": {
+                        "url": url,
+                        "matched": homoglyph_hits
+                    }
                 })
 
             # IP-based URL
@@ -156,14 +182,18 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-        # ---- analyze emails (domain only) ----
-        for e in emails_found:
-            domain = e.split("@")[-1]
-            if _contains_unicode(domain):
+        # ---- detect homoglyph/unicode in words ----
+        words = re.findall(r'\b\S+\b', body)
+        for w in words:
+            hits = _homoglyph_check(w)
+            if hits:
                 findings.append({
-                    "issue": "Unicode characters in email domain",
-                    "severity": "high",
-                    "detail": {"value": e}
+                    "issue": "Suspicious characters in word",
+                    "severity": "medium",
+                    "detail": {
+                        "value": w,
+                        "matched": hits
+                    }
                 })
 
         return {
