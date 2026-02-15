@@ -6,6 +6,7 @@ except ImportError:
     print("[!] Missing dependency: urllib / re")
     raise
 
+
 # -------------------------
 # Regex patterns
 # -------------------------
@@ -21,7 +22,7 @@ ANCHOR_REGEX = re.compile(
 )
 
 EMAIL_REGEX = re.compile(
-    r'\b\S+@\S+\b',
+    r'\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b',
     re.IGNORECASE
 )
 
@@ -35,16 +36,18 @@ IP_REGEX = re.compile(
 
 # Shortened URL domains
 SHORTENER_DOMAINS = {
-    "bit.ly", "tinyurl.com", "t.co", "goo.gl",
-    "is.gd", "ow.ly", "buff.ly", "rebrand.ly",
-    "cutt.ly", "shorturl.at"
+    "bit.ly",
+    "tinyurl.com",
+    "t.co",
+    "goo.gl",
+    "is.gd",
+    "ow.ly",
+    "buff.ly",
+    "rebrand.ly",
+    "cutt.ly",
+    "shorturl.at"
 }
 
-MEDIA_EXTENSIONS = (
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
-    ".mp4", ".mp3", ".wav", ".avi", ".mov",
-    ".pdf", ".zip", ".rar", ".7z"
-)
 
 # -------------------------
 # Helper functions
@@ -78,13 +81,8 @@ def _contains_unicode(value: str) -> bool:
     return False
 
 
-def _is_media(url: str) -> bool:
-    url = url.lower()
-    return any(url.endswith(ext) for ext in MEDIA_EXTENSIONS)
-
-
 # -------------------------
-# Main analysis
+# Main analysis function
 # -------------------------
 
 def main(body_input) -> dict:
@@ -94,7 +92,7 @@ def main(body_input) -> dict:
     emails_found = set()
     phones_found = set()
 
-    # Normalize body
+    # ---- normalize input ----
     if isinstance(body_input, dict):
         text = body_input.get("text", "")
         html = body_input.get("html", "")
@@ -106,82 +104,94 @@ def main(body_input) -> dict:
         if not body.strip():
             return {
                 "status": "empty",
-                "content": "",
                 "urls": [],
-                "media_urls": [],
                 "emails": [],
                 "phones": [],
                 "findings": []
             }
 
-        # Extract URLs
+        # ---- extract URLs ----
         for u in URL_REGEX.findall(body):
             urls_found.add(u.strip())
 
+        # ---- extract anchor hrefs ----
         for a in ANCHOR_REGEX.findall(body):
             anchors_found.add(a.strip())
 
-        all_urls = urls_found.union(anchors_found)
-
-        # Extract emails
+        # ---- strict email extraction ----
         for e in EMAIL_REGEX.findall(body):
             emails_found.add(e.strip())
 
-        # Extract phones
+        # ---- extract phones ----
         for p in PHONE_REGEX.findall(body):
             phones_found.add(p.strip())
 
-        # Analyze URLs
-        for url in all_urls:
+        # ---- suspicious @-tokens ----
+        tokens = re.findall(r'\b\S+@\S+\b', body)
+
+        for t in tokens:
+            cleaned = t.strip('.,;:()[]<>\"\'')
+            
+            if cleaned in emails_found:
+                continue
+
+            # skip URLs
+            if cleaned.startswith("http") or "/" in cleaned:
+                continue
+
+            # skip image scale markers like @2x
+            if re.search(r'@\d+x', cleaned):
+                continue
+
+            findings.append({
+                "issue": "Suspicious @-token in body",
+                "severity": "low",
+                "detail": {"value": cleaned}
+            })
+
+        # ---- analyze URLs ----
+        for url in urls_found.union(anchors_found):
             domain = _normalize_domain(url)
             if not domain:
                 continue
 
+            # Unicode in domain
             if _contains_unicode(domain):
                 findings.append({
                     "issue": "Unicode characters in URL domain",
                     "severity": "medium",
-                    "detail": url
+                    "detail": {"url": url}
                 })
 
+            # IP-based URL
             if _ip_check(url):
                 findings.append({
-                    "issue": "URL uses IP address",
+                    "issue": "URL uses IP address instead of domain",
                     "severity": "high",
-                    "detail": url
+                    "detail": {"url": url}
                 })
 
+            # shortened URL
             if _is_shortener(domain):
                 findings.append({
                     "issue": "Shortened URL detected",
                     "severity": "medium",
-                    "detail": url
+                    "detail": {"url": url}
                 })
 
-        # Unicode in emails
+        # ---- unicode in email addresses ----
         for e in emails_found:
             if _contains_unicode(e):
                 findings.append({
                     "issue": "Unicode characters in email address",
                     "severity": "medium",
-                    "detail": e
+                    "detail": {"value": e}
                 })
-
-        # Separate media URLs
-        media_urls = set()
-        normal_urls = set()
-
-        for u in all_urls:
-            if _is_media(u):
-                media_urls.add(u)
-            else:
-                normal_urls.add(u)
 
         return {
             "status": "done",
-            "content": body.strip(),
-            "urls": sorted(normal_urls),
-            "media_urls": sorted(media_urls),
+            "urls": sorted(urls_found),
+            "anchors": sorted(anchors_found),
             "emails": sorted(emails_found),
             "phones": sorted(phones_found),
             "findings": findings
