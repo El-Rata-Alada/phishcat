@@ -20,25 +20,31 @@ ANCHOR_REGEX = re.compile(
     re.IGNORECASE
 )
 
-# strict email
+# relaxed email detection
 EMAIL_REGEX = re.compile(
-    r'\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b',
-    re.IGNORECASE
+    r'\b\S+@\S+\b'
 )
 
-# loose phone detection
-PHONE_CANDIDATE_REGEX = re.compile(
-    r'[\+\(]?\d[\d\-\s\(\)]{5,}\d'
+PHONE_REGEX = re.compile(
+    r'\b\+?\d[\d\s\-]{7,14}\d\b'
 )
 
 IP_REGEX = re.compile(
     r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 )
 
+# Shortened URL domains
 SHORTENER_DOMAINS = {
-    "bit.ly", "tinyurl.com", "t.co", "goo.gl",
-    "is.gd", "ow.ly", "buff.ly", "rebrand.ly",
-    "cutt.ly", "shorturl.at"
+    "bit.ly",
+    "tinyurl.com",
+    "t.co",
+    "goo.gl",
+    "is.gd",
+    "ow.ly",
+    "buff.ly",
+    "rebrand.ly",
+    "cutt.ly",
+    "shorturl.at"
 }
 
 
@@ -74,15 +80,8 @@ def _contains_unicode(value: str) -> bool:
     return False
 
 
-def _normalize_phone(candidate: str) -> str | None:
-    digits = re.sub(r'\D', '', candidate)
-    if 7 <= len(digits) <= 15:
-        return digits
-    return None
-
-
 # -------------------------
-# Main analysis
+# Main analysis function
 # -------------------------
 
 def main(body_input) -> dict:
@@ -94,13 +93,9 @@ def main(body_input) -> dict:
 
     # ---- normalize input ----
     if isinstance(body_input, dict):
-        text_parts = body_input.get("text/plain", [])
-        html_parts = body_input.get("text/html", [])
-
-        text = "\n".join(text_parts) if text_parts else ""
-        html = "\n".join(html_parts) if html_parts else ""
-
-        body = text + "\n" + html
+        text = body_input.get("text", "")
+        html = body_input.get("html", "")
+        body = (text or "") + "\n" + (html or "")
     else:
         body = body_input or ""
 
@@ -114,29 +109,21 @@ def main(body_input) -> dict:
                 "findings": []
             }
 
-        # ---- URLs ----
+        # ---- extract URLs ----
         for u in URL_REGEX.findall(body):
             urls_found.add(u.strip())
 
-        # ---- anchor hrefs ----
+        # ---- extract anchor hrefs ----
         for a in ANCHOR_REGEX.findall(body):
             anchors_found.add(a.strip())
 
-        # ---- strict emails ----
+        # ---- extract emails ----
         for e in EMAIL_REGEX.findall(body):
             emails_found.add(e.strip())
 
-        # ---- fallback: any word with @ ----
-        tokens = re.findall(r'\b\S+\b', body)
-        for t in tokens:
-            if "@" in t:
-                emails_found.add(t.strip())
-
-        # ---- phone detection ----
-        for candidate in PHONE_CANDIDATE_REGEX.findall(body):
-            normalized = _normalize_phone(candidate)
-            if normalized:
-                phones_found.add(normalized)
+        # ---- extract phones ----
+        for p in PHONE_REGEX.findall(body):
+            phones_found.add(p.strip())
 
         # ---- analyze URLs ----
         for url in urls_found.union(anchors_found):
@@ -144,13 +131,15 @@ def main(body_input) -> dict:
             if not domain:
                 continue
 
-            if _contains_unicode(domain):
+            # Unicode in URL
+            if _contains_unicode(url):
                 findings.append({
-                    "issue": "Unicode characters in URL domain",
+                    "issue": "Unicode characters in URL",
                     "severity": "medium",
                     "detail": {"url": url}
                 })
 
+            # IP-based URL
             if _ip_check(url):
                 findings.append({
                     "issue": "URL uses IP address instead of domain",
@@ -158,6 +147,7 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
+            # shortened URL
             if _is_shortener(domain):
                 findings.append({
                     "issue": "Shortened URL detected",
@@ -165,7 +155,7 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-        # ---- unicode in emails ----
+        # ---- analyze emails ----
         for e in emails_found:
             if _contains_unicode(e):
                 findings.append({
