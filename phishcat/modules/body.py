@@ -136,7 +136,7 @@ def main(body_input) -> dict:
             if _contains_unicode(domain):
                 findings.append({
                     "issue": "Unicode characters in URL domain",
-                    "severity": "medium",
+                    "severity": "high",
                     "detail": {"url": url}
                 })
 
@@ -156,23 +156,14 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-        # ---- detect unicode in emails ----
+        # ---- analyze emails (domain only) ----
         for e in emails_found:
-            if _contains_unicode(e):
+            domain = e.split("@")[-1]
+            if _contains_unicode(domain):
                 findings.append({
-                    "issue": "Unicode characters in email address",
-                    "severity": "medium",
+                    "issue": "Unicode characters in email domain",
+                    "severity": "high",
                     "detail": {"value": e}
-                })
-
-        # ---- detect unicode in general words ----
-        words = re.findall(r'\b\S+\b', body)
-        for w in words:
-            if _contains_unicode(w):
-                findings.append({
-                    "issue": "Unicode characters in body text",
-                    "severity": "low",
-                    "detail": {"value": w}
                 })
 
         return {
