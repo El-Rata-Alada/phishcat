@@ -5,46 +5,32 @@ from phishcat.modules import attachments
 from phishcat.modules import report
 
 
-def _print_email_content(email_data):
-    """Print the email body as seen in inbox."""
-    bodies = email_data.get("bodies", {})
-
-    text_parts = bodies.get("text/plain", [])
-    html_parts = bodies.get("text/html", [])
-
+def _print_email_content(email_data, body_data):
     print("\n" + "=" * 60)
     print("[ EMAIL CONTENT ]")
     print("=" * 60)
 
-    # Prefer plain text
-    if text_parts:
-        print(text_parts[0].strip())
-    elif html_parts:
-        # fallback: show raw html stripped roughly
-        import re
-        html = html_parts[0]
-        text = re.sub(r"<[^>]+>", "", html)
-        print(text.strip())
+    bodies = email_data.get("bodies", {})
+    text = "\n".join(bodies.get("text/plain", []))
+    html = "\n".join(bodies.get("text/html", []))
+
+    readable = text.strip() or html.strip()
+
+    if readable:
+        print("\n" + readable[:2000])
+        if len(readable) > 2000:
+            print("\n...[truncated]")
     else:
-        print("(No readable body content)")
+        print("\n(No readable body content)")
 
-
-def _print_all_urls(body_data):
+    # ---- print all URLs ----
     urls = body_data.get("urls", [])
-    anchors = body_data.get("anchors", [])
-
-    all_urls = sorted(set(urls + anchors))
-
     print("\n" + "=" * 60)
-    print(f"[ ALL URLS FOUND – {len(all_urls)} ]")
+    print(f"[ ALL URLS FOUND – {len(urls)} ]")
     print("=" * 60)
 
-    if not all_urls:
-        print("No URLs found.")
-        return
-
-    for i, u in enumerate(all_urls, 1):
-        print(f"{i}. {u}")
+    for i, url in enumerate(urls, 1):
+        print(f"{i}. {url}")
 
 
 def run_engine(eml_path: str) -> None:
@@ -54,19 +40,20 @@ def run_engine(eml_path: str) -> None:
         print(f"[!] Failed to load EML file: {e}")
         return
 
-    header_findings = []
-    body_findings = []
-    attachment_findings = []
+    try:
+        body_data = body.main(email_data.get("bodies", {}))
+    except Exception as e:
+        print(f"[!] Body analysis failed: {e}")
+        body_data = {"status": "error"}
+
+    # ---- show readable email + URLs BEFORE report ----
+    _print_email_content(email_data, body_data)
 
     try:
         header_findings = headers.main(email_data.get("headers", {}))
     except Exception as e:
         print(f"[!] Header analysis failed: {e}")
-
-    try:
-        body_findings = body.main(email_data.get("bodies", {}))
-    except Exception as e:
-        print(f"[!] Body analysis failed: {e}")
+        header_findings = {}
 
     try:
         attachment_findings = attachments.main(
@@ -74,21 +61,11 @@ def run_engine(eml_path: str) -> None:
         )
     except Exception as e:
         print(f"[!] Attachment analysis failed: {e}")
+        attachment_findings = {}
 
-    # -------------------------
-    # NEW: Pre-report output
-    # -------------------------
-    _print_email_content(email_data)
-    _print_all_urls(body_findings)
-
-    # -------------------------
-    # Existing report
-    # -------------------------
-    try:
-        report.main(
-            header_findings,
-            body_findings,
-            attachment_findings
-        )
-    except Exception as e:
-        print(f"[!] Report generation failed: {e}")
+    # ---- final report ----
+    report.main(
+        header_findings,
+        body_data,
+        attachment_findings
+    )
