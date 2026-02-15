@@ -7,21 +7,6 @@ except ImportError:
     raise
 
 # -------------------------
-# Homoglyph mapping
-# -------------------------
-HOMOGLYPHS = {
-    "a": ["а", "ɑ"],
-    "c": ["с"],
-    "e": ["е"],
-    "i": ["і", "1"],
-    "o": ["о", "0"],
-    "p": ["р"],
-    "s": ["ѕ", "$"],
-    "y": ["у"],
-    "l": ["ⅼ", "1", "!"],
-}
-
-# -------------------------
 # Regex patterns
 # -------------------------
 
@@ -35,31 +20,25 @@ ANCHOR_REGEX = re.compile(
     re.IGNORECASE
 )
 
+# strict email
 EMAIL_REGEX = re.compile(
     r'\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}\b',
     re.IGNORECASE
 )
 
-PHONE_REGEX = re.compile(
-    r'\b\+?\d[\d\s\-]{7,14}\d\b'
+# loose phone detection
+PHONE_CANDIDATE_REGEX = re.compile(
+    r'[\+\(]?\d[\d\-\s\(\)]{5,}\d'
 )
 
 IP_REGEX = re.compile(
     r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 )
 
-# Shortened URL domains
 SHORTENER_DOMAINS = {
-    "bit.ly",
-    "tinyurl.com",
-    "t.co",
-    "goo.gl",
-    "is.gd",
-    "ow.ly",
-    "buff.ly",
-    "rebrand.ly",
-    "cutt.ly",
-    "shorturl.at"
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl",
+    "is.gd", "ow.ly", "buff.ly", "rebrand.ly",
+    "cutt.ly", "shorturl.at"
 }
 
 
@@ -77,21 +56,6 @@ def _normalize_domain(url: str) -> str | None:
         return None
 
 
-def _homoglyph_check(value: str) -> list:
-    hits = []
-
-    for ch in value:
-        if ord(ch) > 127:
-            hits.append(ch)
-
-    for _, lookalikes in HOMOGLYPHS.items():
-        for g in lookalikes:
-            if g in value:
-                hits.append(g)
-
-    return list(set(hits))
-
-
 def _ip_check(url: str) -> bool:
     domain = _normalize_domain(url)
     if not domain:
@@ -103,8 +67,22 @@ def _is_shortener(domain: str) -> bool:
     return domain in SHORTENER_DOMAINS
 
 
+def _contains_unicode(value: str) -> bool:
+    for ch in value:
+        if ord(ch) > 127:
+            return True
+    return False
+
+
+def _normalize_phone(candidate: str) -> str | None:
+    digits = re.sub(r'\D', '', candidate)
+    if 7 <= len(digits) <= 15:
+        return digits
+    return None
+
+
 # -------------------------
-# Main analysis function
+# Main analysis
 # -------------------------
 
 def main(body_input) -> dict:
@@ -116,14 +94,18 @@ def main(body_input) -> dict:
 
     # ---- normalize input ----
     if isinstance(body_input, dict):
-        text = body_input.get("text", "")
-        html = body_input.get("html", "")
-        body = (text or "") + "\n" + (html or "")
+        text_parts = body_input.get("text/plain", [])
+        html_parts = body_input.get("text/html", [])
+
+        text = "\n".join(text_parts) if text_parts else ""
+        html = "\n".join(html_parts) if html_parts else ""
+
+        body = text + "\n" + html
     else:
         body = body_input or ""
 
     try:
-        if not body or not body.strip():
+        if not body.strip():
             return {
                 "status": "empty",
                 "urls": [],
@@ -132,21 +114,29 @@ def main(body_input) -> dict:
                 "findings": []
             }
 
-        # ---- extract URLs ----
+        # ---- URLs ----
         for u in URL_REGEX.findall(body):
             urls_found.add(u.strip())
 
-        # ---- extract anchor hrefs ----
+        # ---- anchor hrefs ----
         for a in ANCHOR_REGEX.findall(body):
             anchors_found.add(a.strip())
 
-        # ---- extract emails ----
+        # ---- strict emails ----
         for e in EMAIL_REGEX.findall(body):
             emails_found.add(e.strip())
 
-        # ---- extract phones ----
-        for p in PHONE_REGEX.findall(body):
-            phones_found.add(p.strip())
+        # ---- fallback: any word with @ ----
+        tokens = re.findall(r'\b\S+\b', body)
+        for t in tokens:
+            if "@" in t:
+                emails_found.add(t.strip())
+
+        # ---- phone detection ----
+        for candidate in PHONE_CANDIDATE_REGEX.findall(body):
+            normalized = _normalize_phone(candidate)
+            if normalized:
+                phones_found.add(normalized)
 
         # ---- analyze URLs ----
         for url in urls_found.union(anchors_found):
@@ -154,19 +144,13 @@ def main(body_input) -> dict:
             if not domain:
                 continue
 
-            # homoglyph / unicode
-            homoglyph_hits = _homoglyph_check(domain)
-            if homoglyph_hits:
+            if _contains_unicode(domain):
                 findings.append({
-                    "issue": "Domain contains suspicious lookalike or Unicode characters",
-                    "severity": "high",
-                    "detail": {
-                        "url": url,
-                        "matched": homoglyph_hits
-                    }
+                    "issue": "Unicode characters in URL domain",
+                    "severity": "medium",
+                    "detail": {"url": url}
                 })
 
-            # IP-based URL
             if _ip_check(url):
                 findings.append({
                     "issue": "URL uses IP address instead of domain",
@@ -174,7 +158,6 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-            # shortened URL
             if _is_shortener(domain):
                 findings.append({
                     "issue": "Shortened URL detected",
@@ -182,18 +165,13 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-        # ---- detect homoglyph/unicode in words ----
-        words = re.findall(r'\b\S+\b', body)
-        for w in words:
-            hits = _homoglyph_check(w)
-            if hits:
+        # ---- unicode in emails ----
+        for e in emails_found:
+            if _contains_unicode(e):
                 findings.append({
-                    "issue": "Suspicious characters in word",
+                    "issue": "Unicode characters in email address",
                     "severity": "medium",
-                    "detail": {
-                        "value": w,
-                        "matched": hits
-                    }
+                    "detail": {"value": e}
                 })
 
         return {
