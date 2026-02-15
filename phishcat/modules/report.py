@@ -1,23 +1,3 @@
-def _print_section(title, findings):
-    print("\n" + "=" * 60)
-    print(f"[ {title} ]")
-    print("=" * 60)
-
-    if not findings:
-        print("No issues found.")
-        return
-
-    for i, item in enumerate(findings, 1):
-        if isinstance(item, dict):
-            print(f"\n{i}. {item.get('title', 'Finding')}")
-            for k, v in item.items():
-                if k == "title":
-                    continue
-                print(f"   - {k}: {v}")
-        else:
-            print(f"{i}. {item}")
-
-
 def _print_headers(header_data):
     print("\n" + "=" * 60)
     print("[ HEADERS ]")
@@ -31,24 +11,53 @@ def _print_headers(header_data):
     auth = header_data.get("auth", {})
     findings = header_data.get("findings", [])
 
-    # ---- Sender identities ----
     print("\n[ SENDER IDENTITIES ]")
     for key in ["From", "Reply-To", "Return-Path", "Sender", "Message-ID"]:
         value = identities.get(key)
         if value:
             print(f"{key}: {value}")
 
-    # ---- Authentication ----
     print("\n[ AUTHENTICATION ]")
     for key in ["SPF", "DKIM", "DMARC", "ARC"]:
         val = auth.get(key)
         print(f"{key}: {val or 'none'}")
 
-    # ---- Findings ----
     print("\n[ FINDINGS ]")
     if findings:
         for f in findings:
             print(f" - {f['issue']} [{f['severity']}]")
+    else:
+        print(" None")
+
+
+def _print_body(body_data):
+    print("\n" + "=" * 60)
+    print("[ BODY ]")
+    print("=" * 60)
+
+    if not body_data or body_data.get("status") == "error":
+        print("Body analysis failed.")
+        return
+
+    if body_data.get("status") == "empty":
+        print("No readable body content.")
+        return
+
+    urls = body_data.get("urls", [])
+    emails = body_data.get("emails", [])
+    phones = body_data.get("phones", [])
+    findings = body_data.get("findings", [])
+
+    print(f"\nURLs found: {len(urls)}")
+    print(f"Email addresses found: {len(emails)}")
+    print(f"Phone numbers found: {len(phones)}")
+
+    print("\n[ SUSPICIOUS FINDINGS ]")
+    if findings:
+        for f in findings:
+            detail = f.get("detail", {})
+            value = detail.get("url") or detail.get("value") or "unknown"
+            print(f" - {value} → {f['issue']} [{f['severity']}]")
     else:
         print(" None")
 
@@ -94,13 +103,8 @@ def main(header_findings, body_findings, attachment_findings):
     print("#        EMAIL SECURITY ANALYSIS REPORT        #")
     print("#" * 60)
 
-    # Headers
     _print_headers(header_findings)
-
-    # Body
-    _print_section("BODY", body_findings)
-
-    # Attachments (fixed)
+    _print_body(body_findings)
     _print_attachments(attachment_findings)
 
     print("\n" + "#" * 60)
