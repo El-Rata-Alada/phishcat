@@ -1,6 +1,6 @@
-# Dependency check
 try:
     import re
+    import os
     from email.utils import parseaddr
 except ImportError:
     print("[!] Missing dependency: email / re")
@@ -20,6 +20,10 @@ HOMOGLYPHS = {
     "l": ["ⅼ", "1", "!"],
 }
 
+
+# -------------------------
+# Helper functions
+# -------------------------
 
 def _domain(addr: str | None) -> str | None:
     if not addr:
@@ -63,6 +67,40 @@ def _homoglyph_check(value: str) -> list:
     return list(set(hits))
 
 
+def _load_local_keywords() -> list:
+    """Finds and loads custom keywords from a local file in the same directory."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_names = ["keywords.txt", "keyword_list.txt", "keywords.cfg"]
+    for name in possible_names:
+        file_path = os.path.join(current_dir, name)
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            except Exception:
+                pass
+    return []
+
+
+def _detect_script_words(text: str) -> list:
+    """Flags any word containing at least one character from Cyrillic or Greek scripts."""
+    flagged_words = set()
+    words = re.findall(r'\b\w+\b', text)
+    
+    cyrillic_pattern = re.compile(r'[\u0400-\u04FF\u0500-\u052F]')
+    greek_pattern = re.compile(r'[\u0370-\u03FF\u1F00-\u1FFF]')
+
+    for word in words:
+        if cyrillic_pattern.search(word) or greek_pattern.search(word):
+            flagged_words.add(word)
+            
+    return list(flagged_words)
+
+
+# -------------------------
+# Main analysis function
+# -------------------------
+
 def main(headers: dict) -> dict:
     findings = []
 
@@ -86,6 +124,9 @@ def main(headers: dict) -> dict:
             "Message-ID": headers.get("Message-ID"),
         }
 
+        # Include subject if present for comprehensive text scanning
+        subject = headers.get("Subject", "")
+
         domains = {
             k: _domain(v) if k != "Message-ID" else (
                 v.split("@")[-1].strip(">") if v and "@" in v else None
@@ -106,6 +147,35 @@ def main(headers: dict) -> dict:
                         "value": val,
                         "matched": hits
                     }
+                })
+
+        # ---- NEW FEATURE 1: Keyword matching within headers ----
+        custom_keywords = _load_local_keywords()
+        for src, val in {**identities, "Subject": subject}.items():
+            if not val:
+                continue
+            matched_keywords = []
+            for kw in custom_keywords:
+                if re.search(r'\b' + re.escape(kw) + r'\b', val, re.IGNORECASE):
+                    matched_keywords.append(kw)
+            
+            if matched_keywords:
+                findings.append({
+                    "issue": f"Custom keyword list match in {src}",
+                    "severity": "medium",
+                    "detail": {"matched_keywords": matched_keywords, "header_value": val}
+                })
+
+        # ---- NEW FEATURE 2: Target Script Character Detection ----
+        for src, val in {**identities, "Subject": subject}.items():
+            if not val:
+                continue
+            script_words = _detect_script_words(val)
+            for word in script_words:
+                findings.append({
+                    "issue": f"Targeted script character detected in {src} word",
+                    "severity": "medium",
+                    "detail": {"word": word, "header_value": val}
                 })
 
         # ---- display name spoofing ----
