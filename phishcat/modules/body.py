@@ -1,11 +1,10 @@
-# Dependency check
 try:
     import re
+    import os
     from urllib.parse import urlparse
 except ImportError:
     print("[!] Missing dependency: urllib / re")
     raise
-
 
 # -------------------------
 # Regex patterns
@@ -34,20 +33,10 @@ IP_REGEX = re.compile(
     r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 )
 
-# Shortened URL domains
 SHORTENER_DOMAINS = {
-    "bit.ly",
-    "tinyurl.com",
-    "t.co",
-    "goo.gl",
-    "is.gd",
-    "ow.ly",
-    "buff.ly",
-    "rebrand.ly",
-    "cutt.ly",
-    "shorturl.at"
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd",
+    "ow.ly", "buff.ly", "rebrand.ly", "cutt.ly", "shorturl.at"
 }
-
 
 # -------------------------
 # Helper functions
@@ -81,6 +70,54 @@ def _contains_unicode(value: str) -> bool:
     return False
 
 
+def _load_local_keywords() -> list:
+    """Finds and loads custom keywords from a local file in the same directory."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Looks for variations of keyword lists in the script's folder
+    possible_names = ["keywords.txt", "keyword_list.txt", "keywords.cfg"]
+    for name in possible_names:
+        file_path = os.path.join(current_dir, name)
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    # Filter out comments or empty lines
+                    return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            except Exception:
+                pass
+    return []
+
+
+def _detect_script_words(text: str) -> list:
+    """
+    Flags any word containing at least one character from Cyrillic or Greek scripts.
+    Note: Latin is defined here, but ignored by default so standard English words 
+    don't overwhelm your findings list.
+    """
+    flagged_words = set()
+    
+    # Split text into individual alphanumeric words
+    words = re.findall(r'\b\w+\b', text)
+    
+    # Character ranges for the target scripts
+    cyrillic_pattern = re.compile(r'[\u0400-\u04FF\u0500-\u052F]')
+    greek_pattern = re.compile(r'[\u0370-\u03FF\u1F00-\u1FFF]')
+    latin_pattern = re.compile(r'[a-zA-Z]')
+
+    for word in words:
+        if cyrillic_pattern.search(word):
+            flagged_words.add(word)
+        elif greek_pattern.search(word):
+            flagged_words.add(word)
+        elif latin_pattern.search(word):
+            # If your email is written in a non-Western script (e.g. Arabic/Hebrew) 
+            # and you want to flag any English/Latin words, uncomment the line below:
+            # flagged_words.add(word)
+            pass
+            
+    return list(flagged_words)
+
+
 # -------------------------
 # Main analysis function
 # -------------------------
@@ -110,37 +147,48 @@ def main(body_input) -> dict:
                 "findings": []
             }
 
-        # ---- extract URLs ----
+        # ---- extract basic features ----
         for u in URL_REGEX.findall(body):
             urls_found.add(u.strip())
 
-        # ---- extract anchor hrefs ----
         for a in ANCHOR_REGEX.findall(body):
             anchors_found.add(a.strip())
 
-        # ---- strict email extraction ----
         for e in EMAIL_REGEX.findall(body):
             emails_found.add(e.strip())
 
-        # ---- extract phones ----
         for p in PHONE_REGEX.findall(body):
             phones_found.add(p.strip())
 
+        # ---- Feature 1: Local Keyword Scan ----
+        custom_keywords = _load_local_keywords()
+        matched_keywords = []
+        for kw in custom_keywords:
+            if re.search(r'\b' + re.escape(kw) + r'\b', body, re.IGNORECASE):
+                matched_keywords.append(kw)
+        
+        if matched_keywords:
+            findings.append({
+                "issue": "Custom keyword list match",
+                "severity": "medium",
+                "detail": {"matched_keywords": matched_keywords}
+            })
+
+        # ---- Feature 2: Target Script Character Detection ----
+        script_words = _detect_script_words(body)
+        for word in script_words:
+            findings.append({
+                "issue": "Targeted script character detected in word",
+                "severity": "medium",
+                "detail": {"word": word}
+            })
+
         # ---- suspicious @-tokens ----
         tokens = re.findall(r'\b\S+@\S+\b', body)
-
         for t in tokens:
             cleaned = t.strip('.,;:()[]<>\"\'')
             
-            if cleaned in emails_found:
-                continue
-
-            # skip URLs
-            if cleaned.startswith("http") or "/" in cleaned:
-                continue
-
-            # skip image scale markers like @2x
-            if re.search(r'@\d+x', cleaned):
+            if cleaned in emails_found or cleaned.startswith("http") or "/" in cleaned or re.search(r'@\d+x', cleaned):
                 continue
 
             findings.append({
@@ -155,7 +203,6 @@ def main(body_input) -> dict:
             if not domain:
                 continue
 
-            # Unicode in domain
             if _contains_unicode(domain):
                 findings.append({
                     "issue": "Unicode characters in URL domain",
@@ -163,7 +210,6 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-            # IP-based URL
             if _ip_check(url):
                 findings.append({
                     "issue": "URL uses IP address instead of domain",
@@ -171,7 +217,6 @@ def main(body_input) -> dict:
                     "detail": {"url": url}
                 })
 
-            # shortened URL
             if _is_shortener(domain):
                 findings.append({
                     "issue": "Shortened URL detected",
